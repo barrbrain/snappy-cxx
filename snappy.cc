@@ -391,7 +391,25 @@ char* CompressFragment(const char* input,
         assert(candidate >= base_ip);
         assert(candidate < ip);
 
+	// Hash chain
+	table[HashBytes(ip - base_ip, shift)] = table[hash];
         table[hash] = ip - base_ip;
+
+        // Search hash chain for longest match
+        uint32_t match_length = FindMatchLength(candidate, ip, ip_end);
+        uint32_t offset = candidate - base_ip;
+        uint32_t previous;
+        while (offset > (previous = table[HashBytes(offset, shift)])) {
+          uint32_t prev_length = FindMatchLength(base_ip + previous, ip, ip_end);
+          // Penalise candidates that use a longer copy instruction
+          if (prev_length && (prev_length > 11 || (ip - base_ip) - previous > 2047))
+            prev_length--;
+          if (prev_length > match_length) {
+            candidate = base_ip + previous;
+            match_length = prev_length;
+          }
+          offset = previous;
+        }
       } while (PREDICT_TRUE(UNALIGNED_LOAD32(ip) !=
                             UNALIGNED_LOAD32(candidate)));
 
@@ -434,6 +452,8 @@ char* CompressFragment(const char* input,
         uint32 cur_hash = HashBytes(GetUint32AtOffset(input_bytes, 1), shift);
         candidate = base_ip + table[cur_hash];
         candidate_bytes = UNALIGNED_LOAD32(candidate);
+	// Hash chain
+	table[HashBytes(ip - base_ip, shift)] = table[cur_hash];
         table[cur_hash] = ip - base_ip;
       } while (GetUint32AtOffset(input_bytes, 1) == candidate_bytes);
 
